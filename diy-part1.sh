@@ -25,7 +25,7 @@ git clone https://github.com/sirpdboy/luci-app-taskplan.git package/luci-app-tas
 
 git clone https://github.com/kenzok8/small.git package/small
 
-git clone https://github.com/whzhni1/luci-app-vnt2.git package/vnt
+# git clone https://github.com/whzhni1/luci-app-vnt2.git package/vnt
 
 git clone --depth 1 https://github.com/jcorporation/myMPD.git /tmp/tmp_mympd
 mv /tmp/tmp_mympd/contrib/packaging/openwrt package/mympd/
