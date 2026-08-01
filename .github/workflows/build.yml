@@ -1,3 +1,284 @@
+name: OpenWrt-ImmortalWrt-x86_64 编译
+
+on:
+  schedule:
+    - cron: 0 21 * * *
+  push:
+    paths:
+      - OpenWrt-immortalwrt.config
+      - diy-part1.sh
+      - diy-part2.sh
+      - files/**
+  workflow_dispatch:
+    inputs:
+      force_build:
+        description: 强制编译（无视变更检测）
+        required: false
+        default: false
+        type: boolean
+      clean_cache:
+        description: 清空缓存
+        required: false
+        default: false
+        type: boolean
+
+env:
+  REPO_URL: https://github.com/immortalwrt/immortalwrt
+  REPO_BRANCH: v25.12.1
+  CONFIG_FILE: OpenWrt-immortalwrt.config
+  DIY_P1_SH: diy-part1.sh
+  DIY_P2_SH: diy-part2.sh
+  COMPILE_THREAD: 4
+  CACHE_KEY_VER: x86-v1
+  TZ: Asia/Shanghai
+  TAG_NAME: build-${{ github.run_number }}
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 360
+    permissions:
+      contents: write
+    steps:
+      - name: 释放磁盘空间
+        uses: jlumbroso/free-disk-space@main
+        with:
+          tool-cache: true
+          large-packages: true
+          docker-images: true
+          swap-storage: true
+
+      - name: 拉取仓库配置文件
+        uses: actions/checkout@v6
+
+      - name: 安装OpenWrt编译完整依赖
+        run: |
+          sudo apt update
+          sudo apt install ack antlr3 asciidoc autoconf automake autopoint binutils bison build-essential \
+          bzip2 ccache clang cmake cpio curl device-tree-compiler ecj fastjar flex gawk gettext gcc-multilib \
+          g++-multilib git gnutls-dev gperf haveged help2man intltool lib32gcc-s1 libc6-dev-i386 libelf-dev \
+          libglib2.0-dev libgmp3-dev libltdl-dev libmpc-dev libmpfr-dev libncurses-dev libpython3-dev \
+          libreadline-dev libssl-dev libtool libyaml-dev libz-dev lld llvm lrzsz mkisofs msmtp nano \
+          ninja-build p7zip p7zip-full patch pkgconf python3 python3-pip python3-ply python3-docutils \
+          python3-pyelftools qemu-utils re2c rsync scons squashfs-tools subversion swig texinfo uglifyjs \
+          upx-ucl unzip vim wget xmlto xxd zlib1g-dev zstd
+          
+      - name: 清理本地缓存
+        if: github.event.inputs.clean_cache == 'true'
+        run: |
+          rm -rf openwrt .ccache build.log upstream_commit.txt last_commit.txt pkg_ref.txt || true
+          echo "✅ 缓存清理完成"
+
+      - name: 恢复编译缓存 dl + ccache
+        uses: actions/cache@v6
+        with:
+          path: |
+            openwrt/dl
+            .ccache
+          key: x86-64-${{ env.CACHE_KEY_VER }}
+          restore-keys: |
+            x86-64-${{ env.CACHE_KEY_VER }}
+
+      - name: 校验源码目录
+        run: |
+          if [ -d openwrt ]; then
+            cd openwrt
+            REMOTE_URL=$(git remote get-url origin)
+            CURRENT_BRANCH=$(git symbolic-ref --short HEAD)
+            if [[ "${REMOTE_URL}" != "${{ env.REPO_URL }}" || "${CURRENT_BRANCH}" != "${{ env.REPO_BRANCH }}" ]]; then
+              echo "⚠️ 目录分支不匹配，重建源码"
+              cd ..
+              rm -rf openwrt
+            fi
+          fi
+
+      # ===== 修改点1：改为完整克隆（解决 default-settings git describe 失败） =====
+      - name: 克隆/更新源码
+        run: |
+          if [ ! -d openwrt ]; then
+            git clone -b ${{ env.REPO_BRANCH }} ${{ env.REPO_URL }} openwrt
+          else
+            cd openwrt
+            git fetch origin --prune --tags
+            git reset --hard origin/${{ env.REPO_BRANCH }}
+            git clean -df
+          fi
+          cd openwrt
+          git rev-parse HEAD > ../upstream_commit.txt
+
+      - name: 执行 diy-part1.sh
+        run: |
+          chmod +x ${{ env.DIY_P1_SH }}
+          cd openwrt
+          ../${{ env.DIY_P1_SH }}
+
+      - name: 导入配置 + 执行 diy-part2.sh
+        run: |
+          cp ${{ env.CONFIG_FILE }} openwrt/.config
+          chmod +x ${{ env.DIY_P2_SH }}
+          cd openwrt
+          ../${{ env.DIY_P2_SH }}
+          make defconfig
+
+      - name: 导出配置用于变更对比
+        run: |
+          cd openwrt
+          grep -E '^(CONFIG_PACKAGE_|CONFIG_LUCI_)' .config | sort > ../current_pkg.txt
+
+      - name: 判断是否启动编译
+        id: judge_build
+        run: |
+          NEED_BUILD=0
+          FORCE=${{ github.event.inputs.force_build }}
+          if [[ "$FORCE" == "true" ]]; then
+            echo "⚠️ 手动强制编译开启"
+            NEED_BUILD=1
+          fi
+
+          if [ -f last_commit.txt ] && [ -f upstream_commit.txt ]; then
+            if ! diff -q last_commit.txt upstream_commit.txt >/dev/null; then
+              echo "⚠️ 上游源码更新，触发编译"
+              NEED_BUILD=1
+            fi
+          fi
+
+          if [ $NEED_BUILD -eq 0 ]; then
+            if [ ! -f pkg_ref.txt ]; then
+              echo "ℹ️ 首次构建，执行编译"
+              NEED_BUILD=1
+            elif ! diff -q pkg_ref.txt current_pkg.txt >/dev/null; then
+              echo "⚠️ 固件配置发生变化，开始编译"
+              NEED_BUILD=1
+            else
+              echo "✅ 源码与配置无变更，跳过编译"
+            fi
+          fi
+
+          echo "NEED_BUILD=${NEED_BUILD}" >> $GITHUB_ENV
+
+      - name: 预下载源码包
+        if: env.NEED_BUILD == '1'
+        run: |
+          cd openwrt
+          make defconfig
+          find dl -size -1024c -exec rm -f {} \;
+          make download -j$(nproc) || make download -j1 V=s
+          echo "✅ 源码包下载完成"
+
+      - name: 编译固件
+        id: compile_firm
+        if: env.NEED_BUILD == '1'
+        run: |
+          cd openwrt
+          THREAD=${{ env.COMPILE_THREAD }}
+          LOG=${{ github.workspace }}/build.log
+          set -o pipefail
+          RESULT="fail"
+          if nice -n 10 make -j${THREAD} 2>&1 | tee ${LOG}; then
+            RESULT="ok"
+          else
+            echo "❌ 多线程编译失败，切换单线程重试"
+            cat ${LOG}
+            if nice -n 10 make -j1 V=s 2>&1 | tee ${LOG}; then
+              RESULT="ok"
+            else
+              echo "❌ 编译最终失败"
+              exit 1
+            fi
+          fi
+          BOARD=$(grep CONFIG_TARGET_BOARD .config | cut -d'=' -f2 | tr -d '"')
+          SUBTARGET=$(grep CONFIG_TARGET_SUBTARGET .config | cut -d'=' -f2 | tr -d '"')
+          echo "result=${RESULT}" >> $GITHUB_OUTPUT
+          echo "BOARD=${BOARD}" >> $GITHUB_OUTPUT
+          echo "SUBTARGET=${SUBTARGET}" >> $GITHUB_OUTPUT
+
+      - name: 更新缓存快照
+        if: steps.compile_firm.outputs.result == 'ok'
+        run: |
+          cp upstream_commit.txt last_commit.txt
+          cp current_pkg.txt pkg_ref.txt
+          echo "✅ 缓存快照已更新"
+
+      - name: 上传编译日志
+        uses: actions/upload-artifact@v4
+        if: env.NEED_BUILD == '1'
+        with:
+          name: build-log
+          path: build.log
+          retention-days: 7
+
+      - name: 上传固件文件（Artifact）
+        if: steps.compile_firm.outputs.result == 'ok'
+        uses: actions/upload-artifact@v4
+        with:
+          name: OpenWrt-Firmware-${{ steps.compile_firm.outputs.BOARD }}-${{ steps.compile_firm.outputs.SUBTARGET }}
+          path: |
+            openwrt/bin/targets/${{ steps.compile_firm.outputs.BOARD }}/${{ steps.compile_firm.outputs.SUBTARGET }}/*.bin
+            openwrt/bin/targets/${{ steps.compile_firm.outputs.BOARD }}/${{ steps.compile_firm.outputs.SUBTARGET }}/*.manifest
+          retention-days: 14
+
+      - name: Create & Push Git Tag
+        if: steps.compile_firm.outputs.result == 'ok'
+        run: |
+          git config --global user.name "CI Builder"
+          git config --global user.email "builder@actions.local"
+          git tag -f ${{ env.TAG_NAME }}
+          git push -f origin ${{ env.TAG_NAME }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: 创建Release发布
+        if: steps.compile_firm.outputs.result == 'ok'
+        uses: softprops/action-gh-release@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ env.TAG_NAME }}
+          name: ImmortalWrt x86_64 自动构建 ${{ github.run_number }}
+          files: |
+            openwrt/bin/targets/${{ steps.compile_firm.outputs.BOARD }}/${{ steps.compile_firm.outputs.SUBTARGET }}/*
+          generate_release_notes: true
+          overwrite: true
+
+      - name: Retain latest 5 releases, remove older releases & tags
+        if: steps.compile_firm.outputs.result == 'ok'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { owner, repo } = context.repo;
+            const reserveCount = 5;
+            console.log(`设置保留最新 ${reserveCount} 个正式Release`);
+
+            const { data: releases } = await github.rest.repos.listReleases({
+              owner, repo, per_page: 100
+            });
+
+            const validReleases = releases
+              .filter(item => !item.draft)
+              .sort((a, b) => new Date(b.published_at) - new Date(a.published_at));
+
+            console.log(`当前正式Release总数：${validReleases.length}`);
+            const removeList = validReleases.slice(reserveCount);
+            console.log(`待删除数量：${removeList.length}`);
+
+            for (const release of removeList) {
+              console.log(`开始删除 Release: ${release.tag_name}`);
+              await github.rest.repos.deleteRelease({
+                owner, repo, release_id: release.id
+              });
+              try {
+                await github.rest.git.deleteRef({
+                  owner, repo, ref: `tags/${release.tag_name}`
+                });
+                console.log(`标签 ${release.tag_name} 删除成功`);
+              } catch (err) {
+                console.log(`标签 ${release.tag_name} 删除警告：`, err.message);
+              }
+            }
+
+
+
+
 name: OpenWrt-immortalwrt版
 
 on:
