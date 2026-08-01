@@ -52,9 +52,9 @@ git clone https://github.com/sirpdboy/luci-app-taskplan.git package/luci-app-tas
 # rm -rf package/istore
 # git clone https://github.com/linkease/istore.git package/istore
 
-# echo -e "  → 克隆 small 仓库 (kenzok8/small)..."
-# rm -rf package/small
-# git clone  https://gh.dpik.top/https://github.com/kenzok8/small.git package/small
+echo -e "  → 克隆 small 仓库 (kenzok8/small)..."
+rm -rf package/small
+git clone  https://gh.dpik.top/https://github.com/kenzok8/small.git package/small
 
 # echo -e "  → 克隆 vnt2 (whzhni1/luci-app-vnt2)..."
 # rm -rf package/vnt
