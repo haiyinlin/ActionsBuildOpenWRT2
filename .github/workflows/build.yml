@@ -161,8 +161,9 @@ jobs:
         if: env.NEED_BUILD == '1'
         run: |
           cd openwrt
-          make defconfig
-          find dl -size -1024c -exec rm -f {} \;
+          make defconfig || make defconfig V=s
+          mkdir -p dl
+          find dl -size -1024c -exec rm -f {} \; || true
           make download -j$(nproc) || make download -j1 V=s
           echo "✅ 源码包下载完成"
 
