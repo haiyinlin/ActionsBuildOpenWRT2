@@ -114,7 +114,7 @@ jobs:
           git fetch origin $REPO_BRANCH
           git reset --hard origin/$REPO_BRANCH
         else
-          git clone --depth=1 $REPO_URL -b $REPO_BRANCH openwrt
+          git clone $REPO_URL -b $REPO_BRANCH openwrt
         fi
         cd openwrt
         git rev-parse HEAD > ../${{ env.UPSTREAM_COMMIT_FILE }}
