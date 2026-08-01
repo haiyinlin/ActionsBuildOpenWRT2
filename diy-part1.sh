@@ -71,6 +71,7 @@ git clone https://github.com/sirpdboy/luci-app-taskplan.git package/luci-app-tas
 echo -e "  → 克隆 small 仓库..."
 rm -rf package/small
 git clone https://github.com/kenzok8/small.git package/small
+rm -rf package/small/trojan-plus package/small/luci-app-fchomo
 
 # 3.4 可选插件（按需取消注释）
 # echo -e "  → 克隆 istore..."
