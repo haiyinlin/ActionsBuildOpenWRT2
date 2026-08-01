@@ -47,6 +47,8 @@ jobs:
 
     - name: Checkout 拉取自定义文件
       uses: actions/checkout@v6
+      with:
+        fetch-depth: 0  
 
     - name: 挂载4G Swap 缓解内存溢出
       run: |
