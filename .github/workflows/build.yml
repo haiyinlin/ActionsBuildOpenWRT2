@@ -2,7 +2,7 @@ name: OpenWrt-ImmortalWrt-x86_64 编译
 
 on:
   schedule:
-    - cron: 0 21 * * *
+    - cron: 0 0 */10 * *
   push:
     paths:
       - OpenWrt-immortalwrt.config
