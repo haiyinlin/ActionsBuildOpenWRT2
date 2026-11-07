@@ -58,9 +58,9 @@ echo -e "${GREEN}  ✅ 已移除冲突包符号链接${NC}"
 echo -e "\n${YELLOW}[4/5] 正在克隆第三方插件源码...${NC}"
 
 # 3.1 lucky (gdy666/luci-app-lucky)
-echo -e "  → 克隆 lucky..."
-rm -rf package/lucky
-git clone https://github.com/gdy666/luci-app-lucky.git package/lucky
+# echo -e "  → 克隆 lucky..."
+# rm -rf package/lucky
+# git clone https://github.com/gdy666/luci-app-lucky.git package/lucky
 
 # 3.2 taskplan (sirpdboy/luci-app-taskplan)
 echo -e "  → 克隆 taskplan..."
