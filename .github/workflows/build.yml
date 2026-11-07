@@ -28,7 +28,7 @@ env:
   CONFIG_FILE: OpenWrt-immortalwrt.config
   DIY_P1_SH: diy-part1.sh
   DIY_P2_SH: diy-part2.sh
-  COMPILE_THREAD: 2
+  COMPILE_THREAD: 4
   CACHE_KEY_VER: x86-v1
   TZ: Asia/Shanghai
 
