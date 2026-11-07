@@ -35,7 +35,7 @@ env:
 
 jobs:
   build:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-22.04
     timeout-minutes: 360
     permissions:
       contents: write
@@ -46,8 +46,15 @@ jobs:
           tool-cache: true
           large-packages: true
           docker-images: true
-          swap-storage: true
-
+          swap-storage: false   # 保留 Swap，避免 OOM 静默杀死作业
+          
+      - name: 创建扩展 Swap 空间
+        run: |
+          sudo fallocate -l 4G /swapfile-extra
+          sudo chmod 600 /swapfile-extra
+          sudo mkswap /swapfile-extra
+          sudo swapon /swapfile-extra
+          sudo swapon --show
       - name: 拉取仓库配置文件
         uses: actions/checkout@v6
         
